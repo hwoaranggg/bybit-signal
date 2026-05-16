@@ -205,3 +205,7 @@ if __name__ == "__main__":
     print("[health] HTTP сервер запущен")
 
     asyncio.run(main())
+    t.start()
+    print("[health] HTTP сервер запущен")
+
+    asyncio.run(main())
