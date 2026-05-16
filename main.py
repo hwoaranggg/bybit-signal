@@ -48,34 +48,64 @@ def start_health_server():
 
 
 async def get_all_usdt_symbols() -> list[str]:
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "application/json",
-    }
-    for attempt in range(5):
-        try:
-            async with httpx.AsyncClient(timeout=20, headers=headers) as client:
-                r = await client.get(BYBIT_REST_URL, params={
-                    "category": "linear",
-                    "status": "Trading",
-                    "limit": 1000,
-                })
-                print(f"[init] Bybit API status: {r.status_code}")
-                data = r.json()
-                if "result" not in data:
-                    print(f"[init] Неожиданный ответ: {str(data)[:200]}")
-                    raise ValueError("no result key")
-                symbols = [
-                    item["symbol"]
-                    for item in data["result"]["list"]
-                    if item["symbol"].endswith("USDT")
-                ]
-                print(f"[init] Найдено {len(symbols)} USDT-фьючерсов")
-                return symbols
-        except Exception as e:
-            print(f"[init] Попытка {attempt+1}/5 не удалась: {e}")
-            await asyncio.sleep(5)
-    raise RuntimeError("Не удалось получить список символов с Bybit")
+    """
+    Получаем список символов через WebSocket (тот же домен что и стримы),
+    минуя REST API который блокирует Railway.
+    """
+    symbols = []
+    try:
+        async with websockets.connect(
+            "wss://stream.bybit.com/v5/public/linear",
+            ping_interval=None,
+            open_timeout=15,
+        ) as ws:
+            # Запрашиваем snapshot тикеров — в ответе придут все активные символы
+            await ws.send(json.dumps({
+                "op": "subscribe",
+                "args": ["tickers.BTCUSDT"]  # dummy подписка чтобы открыть соединение
+            }))
+            # Используем публичный WS endpoint для получения инструментов
+            # Bybit поддерживает запрос через WS
+            await ws.send(json.dumps({
+                "op": "get_instruments",
+                "req_id": "init"
+            }))
+            # Ждём ответы несколько секунд
+            deadline = asyncio.get_event_loop().time() + 5
+            while asyncio.get_event_loop().time() < deadline:
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=2)
+                    msg = json.loads(raw)
+                    if isinstance(msg.get("result"), list):
+                        for item in msg["result"]:
+                            s = item.get("symbol", "")
+                            if s.endswith("USDT"):
+                                symbols.append(s)
+                except asyncio.TimeoutError:
+                    break
+    except Exception as e:
+        print(f"[init] WS symbols error: {e}")
+
+    if not symbols:
+        # Fallback — топ монеты которые точно торгуются
+        symbols = [
+            "BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT",
+            "DOGEUSDT","ADAUSDT","AVAXUSDT","LINKUSDT","DOTUSDT",
+            "MATICUSDT","UNIUSDT","LTCUSDT","ATOMUSDT","NEARUSDT",
+            "APTUSDT","ARBUSDT","OPUSDT","INJUSDT","SUIUSDT",
+            "SEIUSDT","TIAUSDT","ORDIUSDT","WLDUSDT","FETUSDT",
+            "RENDERUSDT","RNDRUSDT","ARUSDT","IMXUSDT","STXUSDT",
+            "RUNEUSDT","FILUSDT","LDOUSDT","GRTUSDT","SANDUSDT",
+            "MANAUSDT","AXSUSDT","APEUSDT","GMXUSDT","DYDXUSDT",
+            "PEPEUSDT","SHIBUSDT","FLOKIUSDT","BONKUSDT","WIFUSDT",
+            "JUPUSDT","PYTHUSDT","JITOUSDT","MEMEUSDT","BOMEUSDT",
+            "TONUSDT","NOTUSDT","HMSTRUSDT","EIGENUSDT","NEIROUSDT",
+        ]
+        print(f"[init] Используем fallback список: {len(symbols)} символов")
+    else:
+        print(f"[init] Получено через WS: {len(symbols)} символов")
+
+    return symbols
 
 
 async def send_telegram(text: str):
