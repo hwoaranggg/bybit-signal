@@ -48,20 +48,34 @@ def start_health_server():
 
 
 async def get_all_usdt_symbols() -> list[str]:
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.get(BYBIT_REST_URL, params={
-            "category": "linear",
-            "status": "Trading",
-            "limit": 1000,
-        })
-        data = r.json()
-    symbols = [
-        item["symbol"]
-        for item in data["result"]["list"]
-        if item["symbol"].endswith("USDT")
-    ]
-    print(f"[init] Найдено {len(symbols)} USDT-фьючерсов")
-    return symbols
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "application/json",
+    }
+    for attempt in range(5):
+        try:
+            async with httpx.AsyncClient(timeout=20, headers=headers) as client:
+                r = await client.get(BYBIT_REST_URL, params={
+                    "category": "linear",
+                    "status": "Trading",
+                    "limit": 1000,
+                })
+                print(f"[init] Bybit API status: {r.status_code}")
+                data = r.json()
+                if "result" not in data:
+                    print(f"[init] Неожиданный ответ: {str(data)[:200]}")
+                    raise ValueError("no result key")
+                symbols = [
+                    item["symbol"]
+                    for item in data["result"]["list"]
+                    if item["symbol"].endswith("USDT")
+                ]
+                print(f"[init] Найдено {len(symbols)} USDT-фьючерсов")
+                return symbols
+        except Exception as e:
+            print(f"[init] Попытка {attempt+1}/5 не удалась: {e}")
+            await asyncio.sleep(5)
+    raise RuntimeError("Не удалось получить список символов с Bybit")
 
 
 async def send_telegram(text: str):
