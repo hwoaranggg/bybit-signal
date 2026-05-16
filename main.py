@@ -19,7 +19,7 @@ import os
 BOT_TOKEN  = os.environ.get("BOT_TOKEN", "")
 CHAT_ID    = os.environ.get("CHAT_ID", "")
 
-THRESHOLD  = 1.5   # % изменения
+THRESHOLD  = 0.3   # % изменения
 WINDOW_MIN = 5     # за сколько минут
 COOLDOWN   = 300   # секунд между алертами по одному токену
 # ──────────────────────────────────────────────
